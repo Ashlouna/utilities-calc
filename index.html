@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Калькулятор комунальних послуг</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: auto;
+    }
+
+    label, select, input {
+      display: block;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+
+    .grid-header, .service-row {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr 1fr;
+      gap: 8px;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .grid-header {
+      font-weight: bold;
+      background: #f0f0f0;
+      padding: 8px;
+    }
+
+    .service-row {
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .service-row input[type="number"] {
+      width: 100%;
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+
+    #total {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    @media (max-width: 768px) {
+      .grid-header, .service-row {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto auto;
+        grid-template-areas:
+          "label label"
+          "prev curr"
+          "diff tariff"
+          "sum sum";
+      }
+
+      .grid-header > div:nth-child(1) { grid-area: label; }
+      .grid-header > div:nth-child(2) { grid-area: prev; }
+      .grid-header > div:nth-child(3) { grid-area: curr; }
+      .grid-header > div:nth-child(4) { grid-area: diff; }
+      .grid-header > div:nth-child(5) { grid-area: tariff; }
+      .grid-header > div:nth-child(6) { grid-area: sum; }
+
+      .service-row > div:nth-child(1) { grid-area: label; }
+      .service-row > div:nth-child(2) { grid-area: prev; }
+      .service-row > div:nth-child(3) { grid-area: curr; }
+      .service-row > div:nth-child(4) { grid-area: diff; }
+      .service-row > div:nth-child(5) { grid-area: tariff; }
+      .service-row > div:nth-child(6) { grid-area: sum; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <label for="apartment">Оберіть квартиру:</label>
+    <select id="apartment">
+      <option value="klenova">Кленова 3/64</option>
+      <option value="slava">Бульвар Слави 2Д/41</option>
+    </select>
+
+    <div class="grid-header">
+      <div>Послуга</div>
+      <div>Попер.</div>
+      <div>Поточн.</div>
+      <div>Різниця</div>
+      <div>Тариф</div>
+      <div>Сума</div>
+    </div>
+
+    <div id="servicesBody"></div>
+
+    <button id="calculate">Розрахувати</button>
+    <h3 id="total"></h3>
+  </div>
+
+  <script>
+    const TARIFFS = {
+      electricity: 4.32,
+      gas: 7.96,
+      gasFee: 1.08,
+      water: 31.36,
+      waterFee: 42.04,
+      maintenance: {
+        klenova: 229,
+        slava: 602.07
+      },
+      internet: 255
+    };
+
+    const SERVICES = {
+      common: [
+        { key: 'electricity', label: 'Світло', meter: true, tariff: TARIFFS.electricity },
+        { key: 'gas', label: 'Газ', meter: true, tariff: TARIFFS.gas },
+        { key: 'gasFee', label: 'Газ абонплата', meter: false, useFrom: 'gas', tariff: TARIFFS.gasFee },
+        { key: 'water', label: 'Вода', meter: true, tariff: TARIFFS.water },
+        { key: 'waterFee', label: 'Вода абонплата', meter: false, fixed: TARIFFS.waterFee },
+      ],
+      klenova: [
+        { key: 'maintenance', label: 'Утримання будинку', meter: false, fixed: TARIFFS.maintenance.klenova },
+        { key: 'heating', label: 'Опалення', manual: true },
+        { key: 'heatingFee', label: 'Опалення абонплата', manual: true }
+      ],
+      slava: [
+        { key: 'maintenance', label: 'Утримання будинку', meter: false, fixed: TARIFFS.maintenance.slava },
+        { key: 'internet', label: 'Інтернет', meter: false, fixed: TARIFFS.internet }
+      ]
+    };
+
+    const apartmentSelect = document.getElementById("apartment");
+    const servicesBody = document.getElementById("servicesBody");
+    const totalBlock = document.getElementById("total");
+
+    apartmentSelect.addEventListener("change", renderForm);
+    document.getElementById("calculate").addEventListener("click", calculate);
+
+    function renderForm() {
+      servicesBody.innerHTML = "";
+      const apt = apartmentSelect.value;
+      const rows = [...SERVICES.common, ...(SERVICES[apt] || [])];
+
+      rows.forEach(service => {
+        const row = document.createElement("div");
+        row.className = "service-row";
+        row.dataset.key = service.key;
+
+        const tariff = service.fixed ?? service.tariff ?? "";
+
+        row.innerHTML = `
+          <div>${service.label}</div>
+          <div>${service.manual || !service.meter ? "" : '<input type="number" class="prev">'}</div>
+          <div>${service.manual || !service.meter ? "" : '<input type="number" class="curr">'}</div>
+          <div class="diff"></div>
+          <div class="tariff">${tariff}</div>
+          <div>${service.manual ? '<input type="number" class="manual-sum">' : '<span class="sum"></span>'}</div>
+        `;
+
+        servicesBody.appendChild(row);
+      });
+    }
+
+    function calculate() {
+      let total = 0;
+      [...servicesBody.querySelectorAll(".service-row")].forEach(row => {
+        const prev = row.querySelector(".prev")?.valueAsNumber || 0;
+        const curr = row.querySelector(".curr")?.valueAsNumber || 0;
+        const diffEl = row.querySelector(".diff");
+        const tariff = parseFloat(row.querySelector(".tariff")?.textContent) || 0;
+        const manualInput = row.querySelector(".manual-sum");
+        let sum = 0;
+
+        if (manualInput) {
+          sum = manualInput.valueAsNumber || 0;
+        } else if (row.dataset.key === "gasFee") {
+          const gasRow = servicesBody.querySelector(".service-row[data-key='gas']");
+          const gasDiff = gasRow ? (gasRow.querySelector(".curr")?.valueAsNumber || 0) - (gasRow.querySelector(".prev")?.valueAsNumber || 0) : 0;
+          sum = gasDiff * tariff;
+          if (diffEl) diffEl.textContent = gasDiff;
+        } else if (["waterFee", "internet", "maintenance"].includes(row.dataset.key)) {
+          sum = tariff;
+        } else {
+          const diff = curr - prev;
+          if (diffEl) diffEl.textContent = diff;
+          sum = diff * tariff;
+        }
+
+        const sumEl = row.querySelector(".sum");
+        if (sumEl) sumEl.textContent = sum.toFixed(2);
+        total += sum;
+      });
+
+      totalBlock.textContent = `Всього: ${total.toFixed(2)} грн`;
+    }
+
+    renderForm();
+  </script>
+</body>
+</html>
